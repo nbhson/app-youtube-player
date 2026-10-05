@@ -5,10 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube Player</title>
+    <meta name="theme-color" content="#0a0b0d">
+    <meta name="description" content="Premium Lite YouTube player with queue, search, PiP and offline support">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <link rel="apple-touch-icon" href="icon.svg">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -19,7 +25,7 @@
     <div class="app">
         <header class="app-header">
             <div class="logo-container">
-                <span class="logo-icon">🔮</span>
+                <span class="logo-icon material-symbols-rounded">smart_display</span>
                 <div class="logo-text">
                     <h1>YT</h1>
                     <span class="logo-badge">Premium Lite</span>
@@ -34,13 +40,14 @@
                     <!-- Input Section -->
                     <div class="search-box">
                         <div class="search-box__wrapper">
-                            <span class="search-box__icon">🔗</span>
+                            <span class="search-box__icon material-symbols-rounded" aria-hidden="true">link</span>
                             <input type="text" class="search-box__input" id="youtubeLink" 
-                                placeholder="Paste YouTube link here (URL, shorts, or Video ID)...">
+                                placeholder="Paste link / Video ID, or type keywords + Enter to search...">
                             <button class="search-box__btn" id="loadButton">
                                 <span>Load Video</span>
-                                <span class="btn-icon">⚡</span>
+                                <span class="btn-icon material-symbols-rounded">bolt</span>
                             </button>
+                            <button class="search-box__btn search-box__btn--search" id="searchButton" title="Search YouTube"><span class="material-symbols-rounded">search</span></button>
                         </div>
                     </div>
 
@@ -61,29 +68,69 @@
                     <div class="video-shelf">
                         <div class="video-info">
                             <h2 class="video-title" id="activeVideoTitle">Loading title...</h2>
-                            <p class="video-channel" id="activeVideoChannel">No details retrieved yet</p>
+                            <div class="video-meta">
+                                <span class="video-channel"><span class="channel-dot" aria-hidden="true"></span><span id="activeVideoChannel">No details retrieved yet</span></span>
+                                <span class="play-progress" id="playProgress"></span>
+                            </div>
                         </div>
-                        <div class="shelf-controls">
-                            <!-- Playback Source Selector -->
-                            <div class="control-group">
-                                <label for="playerSource" class="control-label">Source Backend</label>
+
+                        <div class="toolbar">
+                            <div class="toolbar__group">
+                                <span class="field-label">Source</span>
                                 <div class="select-wrapper">
                                     <select id="playerSource" class="control-select">
-                                        <option value="nocookie">YouTube (No-Cookie)</option>
-                                        <option value="invidious">Invidious Instance</option>
+                                        <option value="nocookie">YouTube No-Cookie</option>
+                                        <option value="invidious">Invidious</option>
                                         <option value="piped">Piped Proxy</option>
                                     </select>
                                 </div>
                             </div>
-                            
-                            <!-- Action Buttons -->
-                            <div class="action-buttons">
+                            <span class="toolbar__divider" aria-hidden="true"></span>
+                            <div class="toolbar__group" role="group" aria-label="Queue navigation">
+                                <button class="action-btn action-btn--ghost" id="prevBtn" title="Previous (Shift+P)">
+                                    <span class="material-symbols-rounded">skip_previous</span>
+                                    <span class="action-btn__text">Prev</span>
+                                </button>
+                                <button class="action-btn action-btn--ghost" id="nextBtn" title="Next (Shift+N)">
+                                    <span class="action-btn__text">Next</span>
+                                    <span class="material-symbols-rounded">skip_next</span>
+                                </button>
+                                <button class="action-btn action-btn--ghost" id="pipBtn" title="Picture-in-Picture">
+                                    <span class="material-symbols-rounded">picture_in_picture_alt</span>
+                                    <span class="action-btn__text">PiP</span>
+                                </button>
+                            </div>
+                            <span class="toolbar__divider" aria-hidden="true"></span>
+                            <div class="toolbar__group">
+                                <span class="field-label">Speed</span>
+                                <div class="select-wrapper">
+                                    <select id="speedSelect" class="control-select control-select--compact">
+                                        <option value="0.5">0.5x</option>
+                                        <option value="0.75">0.75x</option>
+                                        <option value="1" selected>1x</option>
+                                        <option value="1.25">1.25x</option>
+                                        <option value="1.5">1.5x</option>
+                                        <option value="2">2x</option>
+                                    </select>
+                                </div>
+                                <span class="field-label">Sleep</span>
+                                <div class="select-wrapper">
+                                    <select id="sleepSelect" class="control-select control-select--compact">
+                                        <option value="0" selected>Off</option>
+                                        <option value="15">15m</option>
+                                        <option value="30">30m</option>
+                                        <option value="60">60m</option>
+                                        <option value="90">90m</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="toolbar__group toolbar__group--right">
                                 <button class="action-btn action-btn--favorite" id="favoriteToggle" title="Save to Favorites">
-                                    <span class="action-btn__icon">☆</span>
+                                    <span class="material-symbols-rounded">star</span>
                                     <span class="action-btn__text">Favorite</span>
                                 </button>
-                                <button class="action-btn action-btn--share" id="shareEmbed" title="Copy Embed Link">
-                                    <span class="action-btn__icon">🔗</span>
+                                <button class="action-btn action-btn--primary" id="shareEmbed" title="Copy Embed Link">
+                                    <span class="material-symbols-rounded">link</span>
                                     <span class="action-btn__text">Share</span>
                                 </button>
                             </div>
@@ -95,14 +142,20 @@
                 <aside class="sidebar">
                     <!-- Tab Headers -->
                     <div class="tabs-header">
-                        <button class="tab-btn active" data-tab="up-next">
-                            <span>🎵</span> Up Next
+                        <button class="tab-btn active" data-tab="up-next" title="Up Next">
+                            <span class="material-symbols-rounded">queue_music</span><span class="tab-label">Up Next</span>
                         </button>
-                        <button class="tab-btn" data-tab="favorites-history">
-                            <span>⭐</span> Library
+                        <button class="tab-btn" data-tab="search" title="Search">
+                            <span class="material-symbols-rounded">search</span><span class="tab-label">Search</span>
                         </button>
-                        <button class="tab-btn" data-tab="settings">
-                            <span>⚙️</span> Settings
+                        <button class="tab-btn" data-tab="queue" title="Play queue">
+                            <span class="material-symbols-rounded">playlist_play</span><span class="tab-label">Queue</span><span class="tab-badge" id="queueCount">0</span>
+                        </button>
+                        <button class="tab-btn" data-tab="favorites-history" title="Library">
+                            <span class="material-symbols-rounded">video_library</span><span class="tab-label">Library</span>
+                        </button>
+                        <button class="tab-btn" data-tab="settings" title="Settings">
+                            <span class="material-symbols-rounded">settings</span><span class="tab-label">Settings</span>
                         </button>
                     </div>
 
@@ -113,7 +166,7 @@
                             <div class="suggested-videos-section">
                                 <div class="panel-section-header">
                                     <h3>Suggested Videos</h3>
-                                    <button class="icon-btn" id="refreshSuggestions" title="Refresh suggestions">🔄</button>
+                                    <button class="icon-btn material-symbols-rounded" id="refreshSuggestions" title="Refresh suggestions">refresh</button>
                                 </div>
                                 <div class="suggested-container" id="suggestedVideosContainer">
                                     <div class="loading-state">
@@ -124,13 +177,58 @@
                             </div>
                         </div>
 
+                        <!-- Tab: Search results -->
+                        <div class="tab-panel" id="tab-search">
+                            <div class="suggested-videos-section">
+                                <div class="panel-section-header">
+                                    <h3>Search Results</h3>
+                                    <span class="group-count" id="searchCount">0</span>
+                                </div>
+                                <div class="suggested-container" id="searchResultsContainer">
+                                    <div class="empty-state">Type keywords above + Enter to search YouTube</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab: Queue -->
+                        <div class="tab-panel" id="tab-queue">
+                            <div class="queue-section">
+                                <div class="panel-section-header">
+                                    <h3>Play Queue</h3>
+                                    <button class="text-link" id="clearQueue">Clear</button>
+                                </div>
+                                <div class="queue-controls">
+                                    <label class="queue-toggle"><input type="checkbox" id="autoplayToggle" checked> Autoplay</label>
+                                    <div class="select-wrapper">
+                                        <select id="loopMode" class="control-select">
+                                            <option value="off">Loop: Off</option>
+                                            <option value="all" selected>Loop: All</option>
+                                            <option value="one">Loop: One</option>
+                                        </select>
+                                    </div>
+                                    <button class="icon-btn material-symbols-rounded" id="shuffleQueue" title="Shuffle queue">shuffle</button>
+                                </div>
+                                <div class="library-list" id="queueList" style="max-height:none">
+                                    <div class="empty-state">Queue is empty — hover a video and press + to add</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Tab: Library (Favorites & History) -->
                         <div class="tab-panel" id="tab-favorites-history">
                             <div class="library-section">
+                                <div class="input-group">
+                                    <input type="text" class="settings-input" id="libraryFilter" placeholder="Filter library...">
+                                </div>
+                                <div class="library-backup-row">
+                                    <button class="action-btn" id="exportLibraryBtn" title="Export favorites/history/queue to JSON"><span class="material-symbols-rounded">upload</span><span class="action-btn__text">Export</span></button>
+                                    <button class="action-btn" id="importLibraryBtn" title="Import from JSON"><span class="material-symbols-rounded">download</span><span class="action-btn__text">Import</span></button>
+                                    <input type="file" id="importLibraryFile" accept="application/json" hidden>
+                                </div>
                                 <!-- Favorites Sub-section -->
                                 <div class="library-group">
                                     <div class="panel-section-header">
-                                        <h3>⭐ Favorites</h3>
+                                        <h3><span class="material-symbols-rounded">star</span> Favorites</h3>
                                         <span class="group-count" id="favoritesCount">0</span>
                                     </div>
                                     <div class="library-list" id="favoritesList">
@@ -144,7 +242,7 @@
                                 <!-- History Sub-section -->
                                 <div class="library-group">
                                     <div class="panel-section-header">
-                                        <h3>🕒 Recently Played</h3>
+                                        <h3><span class="material-symbols-rounded">history</span> Recently Played</h3>
                                         <button class="text-link" id="clearHistory">Clear</button>
                                     </div>
                                     <div class="library-list" id="historyList">
@@ -159,10 +257,9 @@
                             <div class="settings-section">
                                 <div class="api-key-section">
                                     <div class="panel-section-header">
-                                        <h3>🔑 YouTube API Key</h3>
-                                        <button class="icon-btn" id="toggleApiKey" title="Toggle visibility">👁️</button>
+                                        <h3><span class="material-symbols-rounded">key</span> YouTube API Key</h3>
+                                        <button class="icon-btn material-symbols-rounded" id="toggleApiKey" title="Toggle visibility">visibility</button>
                                     </div>
-                                    
                                     <div class="api-key-container">
                                         <div class="input-group">
                                             <input type="password" class="settings-input" id="apiKeyInput" 
@@ -171,13 +268,13 @@
                                         </div>
                                         
                                         <div class="api-key-status" id="apiKeyStatus">
-                                            <span class="status-icon">⚠️</span>
+                                            <span class="status-icon">warning</span>
                                             <span class="status-text">API key not configured</span>
                                         </div>
                                         
                                         <div class="api-key-help">
                                             <details class="help-details">
-                                                <summary class="help-summary">📖 How to get an API key?</summary>
+                                                <summary class="help-summary"><span class="material-symbols-rounded">help</span> How to get an API key?</summary>
                                                 <div class="help-content">
                                                     <ol>
                                                         <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a>.</li>
@@ -189,6 +286,45 @@
                                                 </div>
                                             </details>
                                         </div>
+                                    </div>
+                                </div>
+
+                                <div class="library-divider"></div>
+
+                                <div class="health-section">
+                                    <div class="panel-section-header">
+                                        <h3><span class="material-symbols-rounded">health_and_safety</span> Source Health</h3>
+                                        <button class="icon-btn material-symbols-rounded" id="checkHealthBtn" title="Check instances now">monitor_heart</button>
+                                    </div>
+                                    <div class="health-rows">
+                                        <label class="control-label" for="invidiousInstance">Invidious</label>
+                                        <div class="select-wrapper">
+                                            <select id="invidiousInstance" class="control-select"></select>
+                                        </div>
+                                        <span class="health-dot" id="invidiousStatus">●</span>
+                                    </div>
+                                    <div class="health-rows">
+                                        <label class="control-label" for="pipedInstance">Piped</label>
+                                        <div class="select-wrapper">
+                                            <select id="pipedInstance" class="control-select"></select>
+                                        </div>
+                                        <span class="health-dot" id="pipedStatus">●</span>
+                                    </div>
+                                    <p class="settings-hint">Auto-switches to the fastest alive instance.</p>
+                                </div>
+
+                                <div class="library-divider"></div>
+
+                                <div class="shortcuts-section">
+                                    <div class="panel-section-header">
+                                        <h3><span class="material-symbols-rounded">keyboard</span> Shortcuts</h3>
+                                    </div>
+                                    <div class="help-content">
+                                        <ol>
+                                            <li><strong>Space / K</strong>: play / pause</li>
+                                            <li><strong>← / →</strong>: seek ∓5s, <strong>J / L</strong>: ∓10s</li>
+                                            <li><strong>F</strong>: fullscreen, <strong>Shift+N / P</strong>: next / prev</li>
+                                        </ol>
                                     </div>
                                 </div>
                             </div>
