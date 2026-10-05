@@ -25,10 +25,11 @@ const MESSAGES = {
 };
 
 const YOUTUBE_URL_PATTERNS = [
-    /[?&]v=([a-zA-Z0-9_-]+)/,
-    /\/shorts\/([a-zA-Z0-9_-]+)/,
-    /youtu\.be\/([a-zA-Z0-9_-]+)/,
-    /\/embed\/([a-zA-Z0-9_-]+)/,
+    /[?&]v=([a-zA-Z0-9_-]{11})/,
+    /\/shorts\/([a-zA-Z0-9_-]{11})/,
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /\/live\/([a-zA-Z0-9_-]{11})/,
+    /\/embed\/([a-zA-Z0-9_-]{11})/,
     /^([a-zA-Z0-9_-]{11})$/ // Direct 11-char Video ID match
 ];
 
@@ -140,7 +141,8 @@ const DOM = {
     historyList: document.getElementById('historyList'),
     favoritesCount: document.getElementById('favoritesCount'),
     clearHistory: document.getElementById('clearHistory'),
-    ambientGlow: document.getElementById('ambientGlow')
+    ambientGlow: document.getElementById('ambientGlow'),
+    pageAmbient: document.getElementById('pageAmbient')
 };
 
 // ============================================================================
@@ -285,14 +287,27 @@ class YouTubeUtils {
      * @param {string} source - 'nocookie' | 'invidious' | 'piped'
      */
     static buildEmbedUrl(videoId, source) {
+        // Guard: YouTube IDs are always exactly 11 chars. Anything else
+        // renders "Error 153 - Video player configuration error".
+        if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId || '')) return null;
+
         if (source === 'invidious') {
             return `https://yewtu.be/embed/${videoId}?autoplay=1`;
         } else if (source === 'piped') {
             return `https://piped.video/embed/${videoId}`;
         } else {
             // Default: youtube no-cookie standard bypass
-            const origin = window.location.origin;
-            return `${CONFIG.YOUTUBE_EMBED_BASE_URL}${videoId}?${CONFIG.YOUTUBE_EMBED_PARAMS}&origin=${origin}`;
+            // IMPORTANT: only append &origin= when running on http(s).
+            // When opened via file://, window.location.origin === "null"
+            // and YouTube rejects the player with Error 153.
+            let originParam = '';
+            try {
+                const o = window.location.origin;
+                if (o && o !== 'null' && /^https?:\/\//.test(o)) {
+                    originParam = `&origin=${encodeURIComponent(o)}`;
+                }
+            } catch (e) { /* ignore - omit origin */ }
+            return `${CONFIG.YOUTUBE_EMBED_BASE_URL}${videoId}?${CONFIG.YOUTUBE_EMBED_PARAMS}${originParam}`;
         }
     }
 
@@ -408,6 +423,142 @@ class YouTubeUtils {
         } else {
             return `${minutes || '0'}:${seconds.padStart(2, '0')}`;
         }
+    }
+}
+
+// ============================================================================
+// Ambient light (extension-like, thumbnail-driven)
+// NOTE: True realtime ambient (read pixels from <video> every frame via
+// canvas/WebGL like "Ambient light for YouTube" extension) is IMPOSSIBLE
+// with cross-origin <iframe> (youtube-nocookie / invidious / piped) due to
+// CORS/tainted-canvas. This controller mimics it using the video thumbnail:
+// blurred image + extracted dominant/edge colors + fade/breathe animation.
+// ============================================================================
+
+class AmbientController {
+    static cache = new Map();
+
+    static bestThumbnail(videoId, thumbnailUrl) {
+        // Prefer hqdefault (480x360) for color quality; fallback to oEmbed thumb
+        if (videoId) return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+        return thumbnailUrl;
+    }
+
+    static hashHue(videoId) {
+        let hash = 0;
+        for (let i = 0; i < String(videoId).length; i++) {
+            hash = videoId.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return Math.abs(hash % 360);
+    }
+
+    static applyFallback(videoId) {
+        const hue = this.hashHue(videoId);
+        const root = document.documentElement.style;
+        root.setProperty('--ambient-glow-color', `hsla(${hue}, 75%, 60%, 0.3)`);
+        root.setProperty('--ambient-c1', `hsla(${hue}, 85%, 60%, 0.55)`);
+        root.setProperty('--ambient-c2', `hsla(${(hue + 40) % 360}, 85%, 55%, 0.45)`);
+        root.setProperty('--ambient-c3', `hsla(${(hue + 320) % 360}, 85%, 55%, 0.45)`);
+    }
+
+    static setFromVideo(videoId, thumbnailUrl) {
+        const glow = DOM.ambientGlow;
+        const page = DOM.pageAmbient;
+        if (!glow && !page) return;
+        const root = document.documentElement.style;
+
+        // Fade out while loading new colors (like extension Fade in/out)
+        if (glow) glow.classList.add('is-loading');
+        if (page) page.classList.add('is-loading');
+
+        const thumb = this.bestThumbnail(videoId, thumbnailUrl);
+
+        // Instant CSS-only glow from image (works even without CORS)
+        // Both the near glow (quanh player) và far glow (cả màn hình) dùng chung vars
+        root.setProperty('--ambient-img', `url("${thumb}")`);
+        this.applyFallback(videoId);
+
+        // Serve from cache if already extracted
+        if (this.cache.has(videoId)) {
+            this.applyPalette(this.cache.get(videoId));
+            if (glow) glow.classList.remove('is-loading');
+            if (page) page.classList.remove('is-loading');
+            return;
+        }
+
+        // Try precise color extraction (needs CORS; i.ytimg.com usually allows it)
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.referrerPolicy = 'no-referrer';
+
+        const done = () => {
+            if (glow) glow.classList.remove('is-loading');
+            if (page) page.classList.remove('is-loading');
+        };
+        const timer = setTimeout(done, 2500); // never stuck in loading state
+
+        img.onload = () => {
+            clearTimeout(timer);
+            try {
+                const palette = this.extractPalette(img);
+                this.cache.set(videoId, palette);
+                // Only apply if user hasn't switched video meanwhile
+                if (appState.getVideoId() === videoId) this.applyPalette(palette);
+            } catch (e) {
+                console.warn('Ambient palette extraction failed, using fallback:', e);
+            }
+            done();
+        };
+        img.onerror = () => { clearTimeout(timer); done(); };
+        img.src = thumb;
+    }
+
+    static extractPalette(img) {
+        const w = 32, h = 18;
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        // Cover-fit draw
+        const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+        const dw = img.naturalWidth * scale, dh = img.naturalHeight * scale;
+        ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+        const data = ctx.getImageData(0, 0, w, h).data;
+
+        const avg = (filter) => {
+            let r = 0, g = 0, b = 0, n = 0;
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    if (!filter(x, y)) continue;
+                    const i = (y * w + x) * 4;
+                    r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+                }
+            }
+            if (!n) return null;
+            return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+        };
+
+        // Edge-biased sampling like the extension (left/right/bottom glow matters most)
+        const left = avg((x) => x < 6);
+        const right = avg((x) => x >= w - 6);
+        const bottom = avg((x, y) => y >= h - 6);
+        const overall = avg(() => true);
+        return { left, right, bottom, overall };
+    }
+
+    static toCss(rgb, alpha = 0.55) {
+        if (!rgb) return null;
+        const [r, g, b] = rgb;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    static applyPalette(palette) {
+        const root = document.documentElement.style;
+        const c1 = this.toCss(palette.left, 0.6) || this.toCss(palette.overall, 0.55);
+        const c2 = this.toCss(palette.right, 0.55) || c1;
+        const c3 = this.toCss(palette.bottom, 0.55) || c1;
+        if (c1) root.setProperty('--ambient-c1', c1);
+        if (c2) root.setProperty('--ambient-c2', c2);
+        if (c3) root.setProperty('--ambient-c3', c3);
     }
 }
 
@@ -833,8 +984,8 @@ class VideoPlayerController {
             // Fire suggestions loads
             await SuggestedVideosController.loadSuggestedVideos(videoId, details.title);
 
-            // Change ambiance lighting glow
-            this.setAmbientGlowColor(videoId);
+            // Change ambiance lighting glow (thumbnail-driven, extension-like)
+            AmbientController.setFromVideo(videoId, details.thumbnailUrl);
 
         } catch (error) {
             console.error('Playback setup failed:', error);
@@ -845,6 +996,11 @@ class VideoPlayerController {
         if (!DOM.videoPlayer) return;
         const source = appState.getPlaybackSource();
         const embedUrl = YouTubeUtils.buildEmbedUrl(videoId, source);
+        if (!embedUrl) {
+            console.warn('Refusing to set invalid embed URL for videoId:', videoId);
+            MessageSystem.show(MESSAGES.INVALID_LINK, 'error');
+            return;
+        }
         DOM.videoPlayer.src = embedUrl;
     }
 
@@ -891,6 +1047,10 @@ class VideoPlayerController {
         const videoId = appState.getVideoId();
         const source = appState.getPlaybackSource();
         const embedUrl = YouTubeUtils.buildEmbedUrl(videoId, source);
+        if (!embedUrl) {
+            MessageSystem.show(MESSAGES.INVALID_LINK, 'error');
+            return;
+        }
 
         navigator.clipboard.writeText(embedUrl).then(() => {
             MessageSystem.show('Embed link copied to clipboard!', 'success');
@@ -900,16 +1060,8 @@ class VideoPlayerController {
         });
     }
 
-    static setAmbientGlowColor(videoId) {
-        if (!DOM.ambientGlow) return;
-        // Simple hash calculation to generate custom color hues per video
-        let hash = 0;
-        for (let i = 0; i < videoId.length; i++) {
-            hash = videoId.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const hue = Math.abs(hash % 360);
-        // Inject hue into CSS ambient glow
-        document.documentElement.style.setProperty('--ambient-glow-color', `hsla(${hue}, 75%, 60%, 0.3)`);
+    static setAmbientGlowColor(videoId, thumbnailUrl) {
+        AmbientController.setFromVideo(videoId, thumbnailUrl);
     }
 
     static clearInput() {

@@ -13,6 +13,9 @@
 </head>
 
 <body>
+    <!-- Full-screen ambient backdrop (extension-like: light fills whole page) -->
+    <div class="page-ambient" id="pageAmbient" aria-hidden="true"></div>
+
     <div class="app">
         <header class="app-header">
             <div class="logo-container">
@@ -48,8 +51,8 @@
                         
                         <div class="player-container">
                             <iframe id="videoPlayer" class="player-iframe" title="YouTube Video Player"
-                                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                                allowfullscreen
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                allowfullscreen frameborder="0" referrerpolicy="strict-origin-when-cross-origin"
                                 src="https://www.youtube-nocookie.com/embed/sru72Wk20Y0?rel=0&playsinline=1&modestbranding=1&autoplay=1"></iframe>
                         </div>
                     </div>
