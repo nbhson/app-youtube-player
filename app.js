@@ -15,7 +15,7 @@ const CONFIG = {
     YOUTUBE_EMBED_PARAMS: 'rel=0&playsinline=1&modestbranding=1&autoplay=1&enablejsapi=1',
     SUGGESTED_VIDEOS_COUNT: 10,
     SEARCH_RESULTS_COUNT: 12,
-    YOUTUBE_API_KEY: 'AIzaSyAXZ2ntfnxiUDPQJq_FjCUIy6wKbqcxuWQ', // Default API Key placeholder
+    YOUTUBE_API_KEY: '', // Load from localStorage at runtime — NEVER hardcode
     YOUTUBE_API_BASE_URL: 'https://www.googleapis.com/youtube/v3',
     INVIDIOUS_INSTANCES: ['https://yewtu.be', 'https://iv.melmac.space', 'https://invidious.nerdvpn.de'],
     PIPED_INSTANCES: ['https://piped.video', 'https://pipedapi.kavin.rocks', 'https://pipedapi.adminforge.de']
