@@ -362,6 +362,25 @@ const appState = new AppState();
 // ============================================================================
 class YouTubeUtils {
     /**
+     * Escape untrusted text for safe interpolation into innerHTML (text nodes).
+     * Any string coming from the YouTube API or an imported backup file MUST
+     * pass through this before being placed in an HTML template.
+     */
+    static escapeHtml(str) {
+        return String(str ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    /** Alias for attribute contexts (same 5 entities — kept for readability). */
+    static escapeAttr(str) {
+        return this.escapeHtml(str);
+    }
+
+    /**
      * Extract video ID from various YouTube formats
      * @param {string} url - youtube link or video ID
      */
@@ -560,9 +579,11 @@ class YouTubeUtils {
                 clearTimeout(timer);
                 return res.ok;
             }
-            const res = await fetch(url.replace(/\/$/, '') + '/', { signal: ctrl.signal, mode: 'no-cors' });
+            // mode:'no-cors' luôn resolve opaque → check vô nghĩa. Dùng Piped API
+            // thực tế có CORS để kiểm tra instance còn sống.
+            const res = await fetch(`${url.replace(/\/$/, '')}/api/v1/trending?region=US`, { signal: ctrl.signal });
             clearTimeout(timer);
-            return true;
+            return res.ok;
         } catch (e) {
             clearTimeout(timer);
             return false;
@@ -793,11 +814,16 @@ class YTPlayerAPI {
 
     static startProgressLoop() {
         if (this.progressTimer) return;
+        let lastPersist = 0;
         this.progressTimer = setInterval(() => {
             const vid = appState.getVideoId();
             const t = this.getTime();
             const d = this.getDuration();
-            if (t > 0) appState.setResume(vid, t);
+            // Persist resume mỗi 10s thay vì mỗi giây (localStorage write/spam)
+            if (t > 0 && Date.now() - lastPersist >= 10000) {
+                lastPersist = Date.now();
+                appState.setResume(vid, t);
+            }
             if (DOM.playProgress) {
                 DOM.playProgress.textContent = d > 0 ? `${YouTubeUtils.formatSeconds(t)} / ${YouTubeUtils.formatSeconds(d)}` : (t > 0 ? YouTubeUtils.formatSeconds(t) : '');
             }
@@ -851,14 +877,14 @@ class QueueController {
                 <span class="queue-card__pos">${i + 1}</span>
                 <div class="library-card__thumbnail"><img src="${v.thumbnailUrl}" alt="" loading="lazy"></div>
                 <div class="library-card__content">
-                    <h4 class="library-card__title" title="${String(v.title || '').replace(/"/g, '&quot;')}">${v.title || v.id}</h4>
-                    <p class="library-card__channel">${v.channelTitle || ''}</p>
+                    <h4 class="library-card__title" title="${YouTubeUtils.escapeAttr(v.title || '')}">${YouTubeUtils.escapeHtml(v.title || v.id)}</h4>
+                    <p class="library-card__channel">${YouTubeUtils.escapeHtml(v.channelTitle || '')}</p>
                 </div>
                 <div class="queue-card__move">
-                    <button data-act="up" data-video-id="${v.id}" title="Move up"><span class="material-symbols-rounded">expand_less</span></button>
-                    <button data-act="down" data-video-id="${v.id}" title="Move down"><span class="material-symbols-rounded">expand_more</span></button>
+                    <button data-act="up" data-video-id="${YouTubeUtils.escapeAttr(v.id)}" title="Move up"><span class="material-symbols-rounded">expand_less</span></button>
+                    <button data-act="down" data-video-id="${YouTubeUtils.escapeAttr(v.id)}" title="Move down"><span class="material-symbols-rounded">expand_more</span></button>
                 </div>
-                <button class="library-card__delete material-symbols-rounded" data-video-id="${v.id}" title="Remove">close</button>
+                <button class="library-card__delete material-symbols-rounded" data-video-id="${YouTubeUtils.escapeAttr(v.id)}" title="Remove">close</button>
             </div>`).join('');
         DOM.queueList.querySelectorAll('.queue-card').forEach(card => {
             card.addEventListener('click', (e) => {
@@ -953,17 +979,17 @@ class SearchController {
             });
             if (DOM.searchCount) DOM.searchCount.textContent = videos.length;
             if (!videos.length) {
-                DOM.searchResultsContainer.innerHTML = `<div class="empty-state">No results for "${q}"</div>`;
+                DOM.searchResultsContainer.innerHTML = `<div class="empty-state">No results for "${YouTubeUtils.escapeHtml(q)}"</div>`;
                 return;
             }
             DOM.searchResultsContainer.innerHTML = videos.map(v => `
-                <div class="suggested-video-card" data-video-id="${v.id}">
-                    <div class="suggested-video-card__thumbnail"><img src="${v.thumbnailUrl}" alt="" loading="lazy"></div>
+                <div class="suggested-video-card" data-video-id="${YouTubeUtils.escapeAttr(v.id)}">
+                    <div class="suggested-video-card__thumbnail"><img src="${YouTubeUtils.escapeAttr(v.thumbnailUrl)}" alt="" loading="lazy"></div>
                     <div class="suggested-video-card__content">
-                        <h4 class="suggested-video-card__title" title="${String(v.title).replace(/"/g, '&quot;')}">${v.title}</h4>
-                        <p class="suggested-video-card__channel">${v.channelTitle}</p>
+                        <h4 class="suggested-video-card__title" title="${YouTubeUtils.escapeAttr(v.title)}">${YouTubeUtils.escapeHtml(v.title)}</h4>
+                        <p class="suggested-video-card__channel">${YouTubeUtils.escapeHtml(v.channelTitle)}</p>
                     </div>
-                    <button class="card-add-btn material-symbols-rounded" data-video-id="${v.id}" title="Add to queue">add</button>
+                    <button class="card-add-btn material-symbols-rounded" data-video-id="${YouTubeUtils.escapeAttr(v.id)}" title="Add to queue">add</button>
                 </div>`).join('');
             DOM.searchResultsContainer.querySelectorAll('.suggested-video-card').forEach(card => {
                 card.addEventListener('click', (e) => {
@@ -1076,7 +1102,14 @@ class SourceHealth {
 
     static fillSelect(sel, list, current) {
         if (!sel) return;
-        sel.innerHTML = list.map(u => `<option value="${u}" ${u === current ? 'selected' : ''}>${u.replace('https://', '')}</option>`).join('');
+        sel.textContent = '';
+        list.forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u; // URL từ CONFIG (không phải user input) — set qua property, không innerHTML
+            opt.textContent = u.replace('https://', '');
+            if (u === current) opt.selected = true;
+            sel.appendChild(opt);
+        });
     }
 
     static setDot(el, ok) {
@@ -1086,6 +1119,10 @@ class SourceHealth {
     }
 
     static async checkAll(manual) {
+        // TTL cache: tránh bắn 7+ cross-origin fetch mỗi lần load trang.
+        const TTL = 5 * 60 * 1000;
+        if (!manual && this._lastCheck && Date.now() - this._lastCheck < TTL) return;
+        this._lastCheck = Date.now();
         const inv = CONFIG.INVIDIOUS_INSTANCES;
         const pip = CONFIG.PIPED_INSTANCES;
         const [invRes, pipRes] = await Promise.all([
@@ -1173,7 +1210,11 @@ class LibraryController {
         }
         if (DOM.importLibraryBtn && DOM.importLibraryFile) {
             DOM.importLibraryBtn.addEventListener('click', () => DOM.importLibraryFile.click());
-            DOM.importLibraryFile.addEventListener('change', (e) => this.importAll(e.target.files[0]));
+            DOM.importLibraryFile.addEventListener('change', (e) => {
+                this.importAll(e.target.files[0]);
+                // Reset để chọn lại CÙNG một file vẫn fire change event
+                e.target.value = '';
+            });
         }
     }
 
@@ -1212,14 +1253,30 @@ class LibraryController {
         reader.onload = () => {
             try {
                 const data = JSON.parse(reader.result);
-                if (Array.isArray(data.favorites)) { appState.favorites = data.favorites; appState.saveFavorites(); }
-                if (Array.isArray(data.history)) { appState.history = data.history.slice(0, 20); appState.saveHistory(); }
-                if (Array.isArray(data.queue)) { appState.queue = data.queue; appState.saveQueue(); }
+                // Validate imported items: untrusted file content later lands in
+                // innerHTML templates — enforce shape/type/length on every field.
+                const sanitizeList = (list, cap) => list
+                    .filter(v => v && typeof v === 'object')
+                    .map(v => ({
+                        id: String(v.id ?? '').slice(0, 32),
+                        title: String(v.title ?? '').slice(0, 300),
+                        channelTitle: String(v.channelTitle ?? '').slice(0, 200),
+                        thumbnailUrl: (typeof v.thumbnailUrl === 'string' && /^https:\/\/i\.ytimg\.com\//.test(v.thumbnailUrl))
+                            ? v.thumbnailUrl
+                            : `https://i.ytimg.com/vi/${encodeURIComponent(String(v.id ?? ''))}/mqdefault.jpg`
+                    }))
+                    .filter(v => v.id)
+                    .slice(0, cap);
+                if (Array.isArray(data.favorites)) { appState.favorites = sanitizeList(data.favorites, 500); appState.saveFavorites(); }
+                if (Array.isArray(data.history)) { appState.history = sanitizeList(data.history, 20); appState.saveHistory(); }
+                if (Array.isArray(data.queue)) { appState.queue = sanitizeList(data.queue, 200); appState.saveQueue(); }
                 this.renderFavorites();
                 this.renderHistory();
                 QueueController.render();
+                VideoPlayerController.updateFavoriteButtonState();
                 MessageSystem.show('Library imported', 'success');
             } catch (e) {
+                console.error('Import failed:', e);
                 MessageSystem.show('Invalid backup file', 'error');
             }
         };
@@ -1240,16 +1297,16 @@ class LibraryController {
         }
 
         const html = favorites.map(video => `
-            <div class="library-card" data-video-id="${video.id}">
+            <div class="library-card" data-video-id="${YouTubeUtils.escapeAttr(video.id)}">
                 <div class="library-card__thumbnail">
-                    <img src="${video.thumbnailUrl}" alt="${video.title}" loading="lazy">
+                    <img src="${YouTubeUtils.escapeAttr(video.thumbnailUrl)}" alt="" loading="lazy">
                 </div>
                 <div class="library-card__content">
-                    <h4 class="library-card__title" title="${video.title}">${video.title}</h4>
-                    <p class="library-card__channel">${video.channelTitle}</p>
+                    <h4 class="library-card__title" title="${YouTubeUtils.escapeAttr(video.title)}">${YouTubeUtils.escapeHtml(video.title)}</h4>
+                    <p class="library-card__channel">${YouTubeUtils.escapeHtml(video.channelTitle)}</p>
                 </div>
-                <button class="card-add-btn material-symbols-rounded" data-video-id="${video.id}" title="Add to queue">add</button>
-                <button class="library-card__delete material-symbols-rounded" data-video-id="${video.id}" title="Remove from favorites">close</button>
+                <button class="card-add-btn material-symbols-rounded" data-video-id="${YouTubeUtils.escapeAttr(video.id)}" title="Add to queue">add</button>
+                <button class="library-card__delete material-symbols-rounded" data-video-id="${YouTubeUtils.escapeAttr(video.id)}" title="Remove from favorites">close</button>
             </div>
         `).join('');
 
@@ -1267,15 +1324,15 @@ class LibraryController {
         }
 
         const html = history.map(video => `
-            <div class="library-card" data-video-id="${video.id}">
+            <div class="library-card" data-video-id="${YouTubeUtils.escapeAttr(video.id)}">
                 <div class="library-card__thumbnail">
-                    <img src="${video.thumbnailUrl}" alt="${video.title}" loading="lazy">
+                    <img src="${YouTubeUtils.escapeAttr(video.thumbnailUrl)}" alt="" loading="lazy">
                 </div>
                 <div class="library-card__content">
-                    <h4 class="library-card__title" title="${video.title}">${video.title}</h4>
-                    <p class="library-card__channel">${video.channelTitle}</p>
+                    <h4 class="library-card__title" title="${YouTubeUtils.escapeAttr(video.title)}">${YouTubeUtils.escapeHtml(video.title)}</h4>
+                    <p class="library-card__channel">${YouTubeUtils.escapeHtml(video.channelTitle)}</p>
                 </div>
-                <button class="card-add-btn material-symbols-rounded" data-video-id="${video.id}" title="Add to queue">add</button>
+                <button class="card-add-btn material-symbols-rounded" data-video-id="${YouTubeUtils.escapeAttr(video.id)}" title="Add to queue">add</button>
             </div>
         `).join('');
 
@@ -1444,19 +1501,19 @@ class SuggestedVideosController {
             const duration = contentDetails?.duration ? YouTubeUtils.formatDuration(contentDetails.duration) : '';
 
             return `
-                <div class="suggested-video-card" data-video-id="${video.id}">
+                <div class="suggested-video-card" data-video-id="${YouTubeUtils.escapeAttr(video.id)}">
                     <div class="suggested-video-card__thumbnail">
-                        <img src="${thumbnail.url}" alt="${snippet.title}" loading="lazy">
+                        <img src="${YouTubeUtils.escapeAttr(thumbnail.url)}" alt="" loading="lazy">
                     </div>
                     <div class="suggested-video-card__content">
-                        <h4 class="suggested-video-card__title" title="${snippet.title}">${snippet.title}</h4>
-                        <p class="suggested-video-card__channel">${snippet.channelTitle}</p>
+                        <h4 class="suggested-video-card__title" title="${YouTubeUtils.escapeAttr(snippet.title)}">${YouTubeUtils.escapeHtml(snippet.title)}</h4>
+                        <p class="suggested-video-card__channel">${YouTubeUtils.escapeHtml(snippet.channelTitle)}</p>
                         <div class="suggested-video-card__meta">
                             ${viewCount ? `<span class="suggested-video-card__views">${viewCount} views</span>` : ''}
                             ${duration ? `<span class="suggested-video-card__duration">${duration}</span>` : ''}
                         </div>
                     </div>
-                    <button class="card-add-btn material-symbols-rounded" data-video-id="${video.id}" title="Add to queue">add</button>
+                    <button class="card-add-btn material-symbols-rounded" data-video-id="${YouTubeUtils.escapeAttr(video.id)}" title="Add to queue">add</button>
                 </div>
             `;
         }).join('');
@@ -1475,19 +1532,19 @@ class SuggestedVideosController {
             const duration = YouTubeUtils.formatDuration(contentDetails.duration);
 
             return `
-                <div class="suggested-video-card" data-video-id="${video.id}">
+                <div class="suggested-video-card" data-video-id="${YouTubeUtils.escapeAttr(video.id)}">
                     <div class="suggested-video-card__thumbnail">
-                        <img src="${thumbnail.url}" alt="${snippet.title}" loading="lazy">
+                        <img src="${YouTubeUtils.escapeAttr(thumbnail.url)}" alt="" loading="lazy">
                     </div>
                     <div class="suggested-video-card__content">
-                        <h4 class="suggested-video-card__title" title="${snippet.title}">${snippet.title}</h4>
-                        <p class="suggested-video-card__channel">${snippet.channelTitle}</p>
+                        <h4 class="suggested-video-card__title" title="${YouTubeUtils.escapeAttr(snippet.title)}">${YouTubeUtils.escapeHtml(snippet.title)}</h4>
+                        <p class="suggested-video-card__channel">${YouTubeUtils.escapeHtml(snippet.channelTitle)}</p>
                         <div class="suggested-video-card__meta">
                             <span class="suggested-video-card__views">${viewCount} views</span>
                             <span class="suggested-video-card__duration">${duration}</span>
                         </div>
                     </div>
-                    <button class="card-add-btn material-symbols-rounded" data-video-id="${video.id}" title="Add to queue">add</button>
+                    <button class="card-add-btn material-symbols-rounded" data-video-id="${YouTubeUtils.escapeAttr(video.id)}" title="Add to queue">add</button>
                 </div>
             `;
         }).join('');
@@ -1837,14 +1894,22 @@ class EventListeners {
 class LayoutSync {
     static init() {
         this.sync();
-        window.addEventListener('resize', () => this.sync());
-        // Re-sync khi main-content đổi chiều cao (player resize, shelf wrap)
+        this._resizeHandler = () => this.sync();
+        window.addEventListener('resize', this._resizeHandler);
+        // Re-sync khi main-content đổi chiều cao (player resize, shelf wrap).
+        // Throttle bằng rAF — ResizeObserver fire liên tục trong khi drag resize.
         const main = document.querySelector('.main-content');
         if (main && 'ResizeObserver' in window) {
-            new ResizeObserver(() => this.sync()).observe(main);
+            let rafId = null;
+            this._ro = new ResizeObserver(() => {
+                if (rafId) return;
+                rafId = requestAnimationFrame(() => { rafId = null; this.sync(); });
+            });
+            this._ro.observe(main);
         }
         // Re-sync sau khi ảnh thumbnail load xong (làm lệch chiều cao)
-        window.addEventListener('load', () => this.sync());
+        this._loadHandler = () => this.sync();
+        window.addEventListener('load', this._loadHandler);
     }
 
     static sync() {
