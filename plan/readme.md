@@ -31,3 +31,35 @@
 
 ### Vòng 1
 - Self-review: `node --check` pass (app.js + sw.js). Đã grep toàn bộ `innerHTML` — mọi interpolation dữ liệu động đều qua `YouTubeUtils.escapeHtml/escapeAttr`. `importAll` sanitize: id ≤32, title ≤300, channel ≤200, thumbnailUrl whitelist `https://i.ytimg.com/`. Queue render cũng đã escape. `checkAll` chỉ bỏ qua khi `!manual` (nút Check vẫn force).
+
+---
+
+# Round 2 (2026-10-29) — Enterprise upgrade
+
+## Kết quả Review (audit đợt 2)
+
+| # | Severity | Vị trí | Vấn đề | Fix |
+|---|----------|--------|--------|-----|
+| 1 | MAJOR | app.js:1010 (SearchController) | `Search failed (${e.message})` nội suy error text (fetch/HTTP) thẳng vào innerHTML | Qua `YouTubeUtils.escapeHtml` |
+| 2 | MINOR | PlaybackExtras.init | Keydown không ignore Ctrl/Cmd/Alt → Ctrl+F/Cmd+… vừa hệ thống vừa kích hoạt shortcut của app | Guard `ctrlKey/metaKey/altKey` |
+| 3 | MINOR | keydown Space | Space trên button đang focus vừa kích hoạt click vừa toggle play | Guard `tag === 'BUTTON'` cho Space/K |
+| 4 | MINOR | sw.js | Cache version chưa bump sau khi đổi assets | Bump v3 (network-first vẫn ưu tiên bản mới, bump đảm bảo prefetch sạch) |
+
+## Feature mới (đợt 2)
+
+1. **Theater mode**: nút Theater + phím T — player trải toàn bộ chiều rộng (`.content-layout.theater`), sidebar thu xuống dưới; lưu localStorage, khôi phục khi load; `aria-pressed` trên nút.
+2. **Mute + volume keys**: M toggle mute (nút + icon volume_off sync, un-mute khi bấm ↑), ↑/↓ volume ±5% qua IFrame API (getVolume/setVolume có clamp).
+3. **Speed stepping**: `,` / `.` đi qua mốc 0.25→2x, đồng bộ `speedSelect` UI (đslider select + appState.setSpeed + setPlaybackRate).
+
+## Trạng thái (Round 2)
+
+- [x] Deep review + plan
+- [x] Fix #1–#4
+- [x] Features: theater mode, mute/volume keys, speed stepping
+- [x] `node --check` (app.js, sw.js) + manifest.webmanifest hợp lệ + self-review
+
+## Review Log (Round 2)
+
+### Vòng 2
+- Self-review: lúc refactor PlaybackExtras bị trùng class/orphan tryPiP body — đã phát hiện qua `node --check` + rà lại toàn bộ class, sửa lại thành 1 class sạch (1 init, tryPiP có signature, không method trùng). `node --check` pass. Shortcuts mới không xung đột phím cũ; các tổ hợp Ctrl/Cmd/Alt được bỏ qua sớm. Theater chỉ đổi class CSS + localStorage — không đụng player. Rủi ro còn lại: volume/mute chỉ hoạt động trên source nocookie (iframe API) — đã báo message rõ khi dùng invidious/piped.
+
