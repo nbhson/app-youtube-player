@@ -164,6 +164,9 @@ const DOM = {
     prevBtn: document.getElementById('prevBtn'),
     nextBtn: document.getElementById('nextBtn'),
     pipBtn: document.getElementById('pipBtn'),
+    theaterBtn: document.getElementById('theaterBtn'),
+    muteBtn: document.getElementById('muteBtn'),
+    muteIcon: document.getElementById('muteIcon'),
     speedSelect: document.getElementById('speedSelect'),
     sleepSelect: document.getElementById('sleepSelect'),
     invidiousInstance: document.getElementById('invidiousInstance'),
@@ -811,6 +814,10 @@ class YTPlayerAPI {
         } catch (e) { return false; }
     }
     static setRate(r) { try { this.player && this.ready && this.player.setPlaybackRate(r); } catch (e) {} }
+    static isMuted() { try { return !!(this.player && this.ready && this.player.isMuted()); } catch (e) { return false; } }
+    static setMuted(m) { try { if (!this.player || !this.ready) return; if (m) this.player.mute(); else this.player.unMute(); } catch (e) {} }
+    static getVolume() { try { return (this.player && this.ready) ? this.player.getVolume() : 0; } catch (e) { return 0; } }
+    static setVolume(v) { try { if (this.player && this.ready) this.player.setVolume(Math.max(0, Math.min(100, Math.round(v)))); } catch (e) {} }
 
     static startProgressLoop() {
         if (this.progressTimer) return;
@@ -1007,26 +1014,39 @@ class SearchController {
             }));
         } catch (e) {
             console.error('Search failed:', e);
-            DOM.searchResultsContainer.innerHTML = `<div class="empty-state">Search failed (${e.message})</div>`;
+            DOM.searchResultsContainer.innerHTML = `<div class="empty-state">Search failed (${YouTubeUtils.escapeHtml(e.message || 'unknown error')})</div>`;
         }
     }
 }
 
 class PlaybackExtras {
     static sleepTimerId = null;
+    static theaterOn = false;
 
     static init() {
+        this.theaterOn = localStorage.getItem('youtube_theater') === '1';
+        this.applyTheater();
+
         // Shortcuts
         document.addEventListener('keydown', (e) => {
             const tag = (document.activeElement && document.activeElement.tagName) || '';
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            // Không chặn các tổ hợp hệ thống (Ctrl/Cmd+F, Ctrl+C, ...)
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (e.code === 'Space' || e.key === 'k' || e.key === 'K') {
+                if (tag === 'BUTTON') return; // Space trên button đang focus = click mặc định
                 if (YTPlayerAPI.toggle()) { e.preventDefault(); }
             } else if (e.key === 'ArrowRight') { if (YTPlayerAPI.seekBy(5)) e.preventDefault(); }
             else if (e.key === 'ArrowLeft') { if (YTPlayerAPI.seekBy(-5)) e.preventDefault(); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); this.stepVolume(5); }
+            else if (e.key === 'ArrowDown') { e.preventDefault(); this.stepVolume(-5); }
             else if (e.key === 'j' || e.key === 'J') { YTPlayerAPI.seekBy(-10); }
             else if (e.key === 'l' || e.key === 'L') { YTPlayerAPI.seekBy(10); }
             else if (e.key === 'f' || e.key === 'F') { this.toggleFullscreen(); }
+            else if (e.key === 't' || e.key === 'T') { this.toggleTheater(); }
+            else if (e.key === 'm' || e.key === 'M') { this.toggleMute(); }
+            else if (e.key === ',') { this.stepSpeed(-1); }
+            else if (e.key === '.') { this.stepSpeed(1); }
             else if (e.shiftKey && (e.key === 'N' || e.key === 'n')) { QueueController.next(true); }
             else if (e.shiftKey && (e.key === 'P' || e.key === 'p')) { QueueController.prev(); }
         });
@@ -1034,6 +1054,8 @@ class PlaybackExtras {
         if (DOM.prevBtn) DOM.prevBtn.addEventListener('click', () => QueueController.prev());
         if (DOM.nextBtn) DOM.nextBtn.addEventListener('click', () => QueueController.next(true));
         if (DOM.pipBtn) DOM.pipBtn.addEventListener('click', () => this.tryPiP());
+        if (DOM.theaterBtn) DOM.theaterBtn.addEventListener('click', () => this.toggleTheater());
+        if (DOM.muteBtn) DOM.muteBtn.addEventListener('click', () => this.toggleMute());
         if (DOM.speedSelect) {
             DOM.speedSelect.value = String(appState.speed || 1);
             DOM.speedSelect.addEventListener('change', (e) => {
@@ -1046,13 +1068,57 @@ class PlaybackExtras {
         if (DOM.sleepSelect) DOM.sleepSelect.addEventListener('change', (e) => this.setSleep(parseInt(e.target.value, 10) || 0));
     }
 
-    static toggleFullscreen() {
-        const el = document.querySelector('.player-container');
-        if (!el) return;
-        try {
-            if (document.fullscreenElement) document.exitFullscreen();
-            else el.requestFullscreen && el.requestFullscreen();
-        } catch (e) {}
+    // --- Theater mode: trải toàn bộ chiều rộng, ẩn sidebar ---
+    static toggleTheater() {
+        this.theaterOn = !this.theaterOn;
+        this.applyTheater();
+        localStorage.setItem('youtube_theater', this.theaterOn ? '1' : '0');
+        MessageSystem.show(`Theater mode ${this.theaterOn ? 'on' : 'off'}`, 'success');
+    }
+    static applyTheater() {
+        const layout = document.querySelector('.content-layout');
+        if (!layout) return;
+        layout.classList.toggle('theater', this.theaterOn);
+        if (DOM.theaterBtn) DOM.theaterBtn.setAttribute('aria-pressed', String(this.theaterOn));
+    }
+
+    // Bước tốc độ theo mốc chuẩn, đồng bộ lại select UI
+    static SPEED_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+    static stepSpeed(dir) {
+        const steps = this.SPEED_STEPS;
+        let idx = steps.findIndex(s => Math.abs(s - (appState.speed || 1)) < 0.001);
+        if (idx === -1) idx = steps.indexOf(1);
+        const next = steps[Math.max(0, Math.min(steps.length - 1, idx + dir))];
+        if (Math.abs(next - (appState.speed || 1)) < 0.001) return;
+        appState.setSpeed(next);
+        YTPlayerAPI.setRate(next);
+        if (DOM.speedSelect) DOM.speedSelect.value = String(next);
+        MessageSystem.show(`Speed ${next}x`, 'success');
+    }
+
+    static stepVolume(delta) {
+        if (!YTPlayerAPI.player || !YTPlayerAPI.ready) { MessageSystem.show('Volume control needs YouTube source', 'error'); return; }
+        const v = Math.max(0, Math.min(100, YTPlayerAPI.getVolume() + delta));
+        YTPlayerAPI.setVolume(v);
+        if (v > 0 && YTPlayerAPI.isMuted()) { YTPlayerAPI.setMuted(false); this.syncMuteUI(); }
+        MessageSystem.show(`Volume ${v}%`, 'success');
+    }
+
+    static toggleMute() {
+        const next = !YTPlayerAPI.isMuted();
+        if (!YTPlayerAPI.player || !YTPlayerAPI.ready) {
+            MessageSystem.show('Mute needs the YouTube (No-Cookie) source', 'error');
+            return;
+        }
+        YTPlayerAPI.setMuted(next);
+        this.syncMuteUI();
+        MessageSystem.show(next ? 'Muted' : 'Unmuted', 'success');
+    }
+
+    static syncMuteUI() {
+        const muted = YTPlayerAPI.isMuted() || YTPlayerAPI.getVolume() === 0;
+        if (DOM.muteIcon) DOM.muteIcon.textContent = muted ? 'volume_off' : 'volume_up';
+        if (DOM.muteBtn) DOM.muteBtn.classList.toggle('is-active', muted);
     }
 
     static async tryPiP() {
