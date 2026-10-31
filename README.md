@@ -1,5 +1,7 @@
 # YouTube Player 📺
 
+[![CI](https://github.com/nbhson/app-youtube-player/actions/workflows/ci.yml/badge.svg)](https://github.com/nbhson/app-youtube-player/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 YouTube player dạng **PWA** với queue, tìm kiếm, favorites, history, Picture-in-Picture và hỗ trợ offline (app shell).
 
 ## Tính năng
