@@ -1,8 +1,8 @@
 /* YT Premium Lite service worker — app-shell offline cache.
    Network-first cho same-origin GET: luôn ưu tiên bản mới nhất,
    chỉ fallback sang cache khi offline. Version bump mỗi khi đổi assets. */
-const CACHE = 'yt-lite-v3';
-const ASSETS = ['./', './index.html', './style.css', './app.js', './manifest.webmanifest', './icon.svg'];
+const CACHE = 'yt-lite-v4';
+const ASSETS = ['./', './index.html', './style.css', './utils.js', './app.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
