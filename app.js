@@ -435,32 +435,38 @@ class YouTubeUtils {
     }
 
     /**
-     * Fetch video title and author publicly (No API Key required) via oEmbed proxy
+     * Fetch video title and author publicly (No API Key required) via YouTube's official oEmbed endpoint
      * @param {string} videoId 
      */
     static async fetchVideoDetailsOEmbed(videoId) {
+        const fallback = {
+            id: videoId,
+            title: `YouTube Video (${videoId})`,
+            channelTitle: 'YouTube Bypass',
+            thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`
+        };
         try {
-            // Using noembed CORS-enabled proxy endpoint
-            const response = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
-            if (!response.ok) throw new Error('Proxy failure');
-            
+            // YouTube's own CORS-enabled oEmbed endpoint. Using it directly
+            // (instead of a third-party proxy like noembed.com) keeps watch
+            // history from leaking to another service.
+            const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+            const response = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
             const data = await response.json();
-            if (data.error) throw new Error(data.error);
 
             return {
                 id: videoId,
-                title: data.title || `Video (${videoId})`,
-                channelTitle: data.author_name || 'YouTube Creator',
-                thumbnailUrl: data.thumbnail_url || `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`
+                title: data.title || fallback.title,
+                channelTitle: data.author_name || fallback.channelTitle,
+                // YouTube oEmbed has no separate field we relied on beyond
+                // title/author_name/thumbnail_url — fall back to the local
+                // static thumbnail URL when the field is missing.
+                thumbnailUrl: data.thumbnail_url || fallback.thumbnailUrl
             };
         } catch (e) {
             console.warn('OEmbed fetch failed, fallback applied:', e);
-            return {
-                id: videoId,
-                title: `YouTube Video (${videoId})`,
-                channelTitle: 'YouTube Bypass',
-                thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`
-            };
+            return fallback;
         }
     }
 
